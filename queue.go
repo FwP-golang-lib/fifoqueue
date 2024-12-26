@@ -1,17 +1,23 @@
 package queue
 
-import "sync"
+import (
+	"reflect"
+	"sync"
+
+	"github.com/FwP-golang-lib/fifoqueue/internal/block"
+)
 
 const (
-	defaultBlockSize = 256
+	defaultMaxBlockSizeInByte = 2048
+	defaultIntiialBlockSize   = 1
 )
 
 func IntPtr(v int) *int {
 	return &v
 }
 
-type FifoQueueConfig struct {
-	BlockSize *int
+type FifoQueueConfig[T any] struct {
+	MaxBlockSize *int
 }
 
 type Queue[T any] interface {
@@ -21,40 +27,44 @@ type Queue[T any] interface {
 }
 
 type fifoQueue[T any] struct {
-	lock      sync.RWMutex
-	size      int
-	blockSize int
+	lock          sync.RWMutex
+	size          int
+	maxBlockSize  int
+	lastBlockSize int
 
-	frontBlock block[T]
-	backBlock  block[T]
+	frontBlock *block.Block[T]
+	backBlock  *block.Block[T]
 }
 
-func (c *FifoQueueConfig) GetBlockSize() int {
-	if c == nil || c.BlockSize == nil {
-		return defaultBlockSize
+func (c *FifoQueueConfig[T]) GetMaxBlockSize() int {
+	if c == nil || c.MaxBlockSize == nil {
+		typeSizeInByte := reflect.TypeOf((*T)(nil)).Elem().Size()
+		if typeSizeInByte > defaultMaxBlockSizeInByte {
+			return 1
+		}
+		return defaultMaxBlockSizeInByte / int(typeSizeInByte)
 	}
-	return *c.BlockSize
+	return *c.MaxBlockSize
 }
 
 type fifoQueueConfigInternal struct {
-	BlockSize int
+	MaxBlockSize int
 }
 
-func (c *FifoQueueConfig) toInternal() fifoQueueConfigInternal {
+func (c *FifoQueueConfig[T]) toInternal() fifoQueueConfigInternal {
 	return fifoQueueConfigInternal{
-		BlockSize: c.GetBlockSize(),
+		MaxBlockSize: c.GetMaxBlockSize(),
 	}
 }
 
-func NewFifoQueue[T any](c *FifoQueueConfig) Queue[T] {
+func NewFifoQueue[T any](c *FifoQueueConfig[T]) Queue[T] {
 	conf := c.toInternal()
 
-	initialBlock := &initialBlock[T]{
-		maxSize: conf.BlockSize,
-	}
+	initialBlock := block.NewBlock[T](defaultIntiialBlockSize)
 	return &fifoQueue[T]{
-		blockSize:  conf.BlockSize,
-		frontBlock: initialBlock,
-		backBlock:  initialBlock,
+		maxBlockSize:  conf.MaxBlockSize,
+		lastBlockSize: defaultIntiialBlockSize,
+		frontBlock:    initialBlock,
+		backBlock:     initialBlock,
 	}
 }

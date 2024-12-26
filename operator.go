@@ -4,14 +4,14 @@ func (f *fifoQueue[T]) Push(elem T) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	if f.backBlock.isFull() {
-		newBlock := &fixedSizeBlock[T]{
-			blockElems: make([]T, 0, f.blockSize),
+	if f.backBlock.IsFull() {
+		f.lastBlockSize = min(f.lastBlockSize*2, f.maxBlockSize)
+		if f.backBlock.GetNext().IsFull() {
+			f.backBlock.AppendNewBlock(f.lastBlockSize)
 		}
-		f.backBlock.setNext(newBlock)
-		f.backBlock = newBlock
+		f.backBlock = f.backBlock.GetNext()
 	}
-	f.backBlock.push(elem)
+	f.backBlock.Push(elem)
 	f.size++
 }
 
@@ -23,11 +23,13 @@ func (f *fifoQueue[T]) Pop() (result T, err error) {
 		return result, ErrEmptyQueue
 	}
 
-	if f.frontBlock.isEmpty() {
-		f.frontBlock = f.frontBlock.getNext()
+	if f.frontBlock.IsEmpty() {
+		nextFrontBlock := f.frontBlock.GetNext()
+		f.frontBlock.UnlinkSelf()
+		f.frontBlock = nextFrontBlock
 	}
 
-	result = f.frontBlock.pop()
+	result = f.frontBlock.Pop()
 	f.size--
 	return result, nil
 }
